@@ -12,6 +12,8 @@ REPOS=(
   "mylinuxforwork/dotfiles"
   "kovidgoyal/kitty"
   "sxyazi/yazi"
+  "jordan-dalby/ByteStash"
+  "DumbWareio/DumbPad"
 )
 
 
