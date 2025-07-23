@@ -14,6 +14,7 @@ REPOS=(
   "sxyazi/yazi"
   "jordan-dalby/ByteStash"
   "DumbWareio/DumbPad"
+  "SourcewareLab/Toney"
 )
 
 
