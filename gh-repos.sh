@@ -15,6 +15,9 @@ REPOS=(
   "jordan-dalby/ByteStash"
   "DumbWareio/DumbPad"
   "SourcewareLab/Toney"
+  "Antiz96/zaman"
+  "CachyOS/cachyos-niri-settings"
+  "CachyOS/cachy-update"
 )
 
 
