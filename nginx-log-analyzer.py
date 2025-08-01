@@ -13,7 +13,6 @@ LOG-DATEIEN:
 
 ZEITFILTER: heute | diese_woche | dieser_monat | gesamter_zeitraum
 
-Beispiele :
 
 # Einzelne Log-Datei, heute
 python3 nginx_access_log_analyzer.py start --zeit heute
@@ -30,7 +29,8 @@ python3 nginx_access_log_analyzer.py immich bilder --zeit gesamter_zeitraum
 # Hilfe anzeigen
 python3 nginx_access_log_analyzer.py --help
 
-gerne auch mit : watch -n 1
+auch mit "watch -n 60"
+
 
 """
 
@@ -296,8 +296,8 @@ class NginxLogAnalyzer:
             return
 
         # Top IPs
-        print(f"\n🌐 TOP 10 IP-ADRESSEN:")
-        for ip, count in self.stats['top_ips'].most_common(10):
+        print(f"\n🌐 TOP 20 IP-ADRESSEN:")
+        for ip, count in self.stats['top_ips'].most_common(20):
             percentage = (count / self.stats['total_requests']) * 100
             print(f"   {ip:<15} {count:>8,} requests ({percentage:>5.1f}%)")
 
