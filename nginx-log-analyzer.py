@@ -12,26 +12,6 @@ LOG-DATEIEN:
 /var/log/nginx/bilder_access.log
 
 ZEITFILTER: heute | diese_woche | dieser_monat | gesamter_zeitraum
-
-
-# Einzelne Log-Datei, heute
-python3 nginx_access_log_analyzer.py start --zeit heute
-
-# Mehrere Logs, diese Woche
-python3 nginx_access_log_analyzer.py start wiki pad --zeit diese_woche
-
-# Alle Logs, dieser Monat mit CSV-Export
-python3 nginx_access_log_analyzer.py alle --zeit dieser_monat --csv
-
-# Spezifische Logs, gesamter Zeitraum
-python3 nginx_access_log_analyzer.py immich bilder --zeit gesamter_zeitraum
-
-# Hilfe anzeigen
-python3 nginx_access_log_analyzer.py --help
-
-auch mit "watch -n 60"
-
-
 """
 
 import re
@@ -41,6 +21,35 @@ from collections import Counter, defaultdict
 from datetime import datetime, timedelta, date
 import ipaddress
 import os
+
+# ANSI Farbcodes für Terminal-Ausgabe
+class Colors:
+    # Farben
+    RED = '\033[91m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    BLUE = '\033[94m'
+    MAGENTA = '\033[95m'
+    CYAN = '\033[96m'
+    WHITE = '\033[97m'
+    GRAY = '\033[90m'
+
+    # Styles
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+    RESET = '\033[0m'
+
+    # Kombinationen
+    HEADER = BOLD + CYAN
+    SUCCESS = BOLD + GREEN
+    WARNING = BOLD + YELLOW
+    ERROR = BOLD + RED
+    INFO = BOLD + BLUE
+
+    @staticmethod
+    def colorize(text, color):
+        """Färbt Text ein"""
+        return f"{color}{text}{Colors.RESET}"
 
 # KONFIGURATION - LOG-DATEIEN
 LOG_FILES = {
@@ -125,17 +134,17 @@ class NginxLogAnalyzer:
 
     def parse_log_files(self):
         """Parse alle angegebenen Log-Dateien"""
-        print(f"\n🔍 NGINX LOG ANALYZER - Zeitfilter: {self.time_filter.upper()}")
-        print("="*80)
+        print(f"\n{Colors.HEADER}🔍 NGINX LOG ANALYZER - Zeitfilter: {self.time_filter.upper()}{Colors.RESET}")
+        print(Colors.colorize("="*80, Colors.CYAN))
 
         total_processed = 0
 
         for log_file in self.log_files:
             if not os.path.exists(log_file):
-                print(f"❌ Datei nicht gefunden: {log_file}")
+                print(f"{Colors.ERROR}❌ Datei nicht gefunden: {log_file}{Colors.RESET}")
                 continue
 
-            print(f"\n📁 Analysiere: {log_file}")
+            print(f"\n{Colors.INFO}📁 Analysiere: {Colors.RESET}{Colors.BOLD}{log_file}{Colors.RESET}")
             file_entries = 0
 
             try:
@@ -153,13 +162,13 @@ class NginxLogAnalyzer:
                                 file_entries += 1
 
                 total_processed += file_entries
-                print(f"   ✓ {file_entries:,} Einträge (im Zeitraum) verarbeitet")
+                print(f"   {Colors.SUCCESS}✓ {file_entries:,} Einträge (im Zeitraum) verarbeitet{Colors.RESET}")
 
             except Exception as e:
-                print(f"   ❌ Fehler beim Lesen: {e}")
+                print(f"   {Colors.ERROR}❌ Fehler beim Lesen: {e}{Colors.RESET}")
                 continue
 
-        print(f"\n✅ Gesamt verarbeitet: {total_processed:,} Log-Einträge")
+        print(f"\n{Colors.SUCCESS}✅ Gesamt verarbeitet: {total_processed:,} Log-Einträge{Colors.RESET}")
         return total_processed > 0
 
     def _update_stats(self, entry):
@@ -271,98 +280,119 @@ class NginxLogAnalyzer:
 
     def print_report(self):
         """Gibt einen detaillierten Bericht aus"""
-        print("\n" + "="*80)
+        print(f"\n{Colors.HEADER}{'='*80}")
         print(f"NGINX MULTI-LOG ANALYSE - {self.get_time_filter_description().upper()}")
-        print("="*80)
+        print(f"{'='*80}{Colors.RESET}")
 
         # Log-Dateien Übersicht
         if len(self.log_files) > 1:
-            print(f"\n📁 ANALYSIERTE LOG-DATEIEN:")
+            print(f"\n{Colors.INFO}📁 ANALYSIERTE LOG-DATEIEN:{Colors.RESET}")
             for source_file, stats in self.stats['log_file_stats'].items():
                 unique_ips = len(stats['unique_ips'])
-                print(f"   {source_file:<25} {stats['requests']:>8,} requests, {unique_ips:>6,} unique IPs")
+                print(f"   {Colors.CYAN}{source_file:<25}{Colors.RESET} {Colors.BOLD}{stats['requests']:>8,}{Colors.RESET} requests, {Colors.YELLOW}{unique_ips:>6,}{Colors.RESET} unique IPs")
 
         # Grundlegende Statistiken
-        print(f"\n📊 GRUNDSTATISTIKEN ({self.get_time_filter_description()}):")
-        print(f"   Gesamte Requests: {self.stats['total_requests']:,}")
-        print(f"   Eindeutige IPs: {len(self.stats['unique_ips']):,}")
-        print(f"   Datenübertragung: {self.format_bytes(self.stats['bytes_transferred'])}")
-        print(f"   Bot-Requests: {sum(self.stats['bot_requests'].values()):,}")
-        print(f"   Fehler-Requests: {len(self.stats['error_requests']):,}")
+        print(f"\n{Colors.INFO}📊 GRUNDSTATISTIKEN ({self.get_time_filter_description()}):{Colors.RESET}")
+        print(f"   {Colors.BOLD}Gesamte Requests:{Colors.RESET} {Colors.GREEN}{self.stats['total_requests']:,}{Colors.RESET}")
+        print(f"   {Colors.BOLD}Eindeutige IPs:{Colors.RESET} {Colors.YELLOW}{len(self.stats['unique_ips']):,}{Colors.RESET}")
+        print(f"   {Colors.BOLD}Datenübertragung:{Colors.RESET} {Colors.CYAN}{self.format_bytes(self.stats['bytes_transferred'])}{Colors.RESET}")
+        print(f"   {Colors.BOLD}Bot-Requests:{Colors.RESET} {Colors.MAGENTA}{sum(self.stats['bot_requests'].values()):,}{Colors.RESET}")
+        print(f"   {Colors.BOLD}Fehler-Requests:{Colors.RESET} {Colors.RED}{len(self.stats['error_requests']):,}{Colors.RESET}")
 
         # Nur relevante Abschnitte anzeigen wenn Daten vorhanden
         if not self.stats['total_requests']:
-            print(f"\n❌ Keine Daten für Zeitraum '{self.time_filter}' gefunden!")
+            print(f"\n{Colors.ERROR}❌ Keine Daten für Zeitraum '{self.time_filter}' gefunden!{Colors.RESET}")
             return
 
         # Top IPs
-        print(f"\n🌐 TOP 20 IP-ADRESSEN:")
-        for ip, count in self.stats['top_ips'].most_common(20):
+        print(f"\n{Colors.INFO}🌐 TOP 20 IP-ADRESSEN:{Colors.RESET}")
+        for i, (ip, count) in enumerate(self.stats['top_ips'].most_common(20), 1):
             percentage = (count / self.stats['total_requests']) * 100
-            print(f"   {ip:<15} {count:>8,} requests ({percentage:>5.1f}%)")
+            # Farbe basierend auf Ranking
+            if i <= 3:
+                ip_color = Colors.RED
+            elif i <= 10:
+                ip_color = Colors.YELLOW
+            else:
+                ip_color = Colors.WHITE
+            print(f"   {Colors.GRAY}{i:>2}.{Colors.RESET} {Colors.colorize(ip, ip_color):<15} {Colors.BOLD}{count:>8,}{Colors.RESET} requests ({Colors.GREEN}{percentage:>5.1f}%{Colors.RESET})")
 
         # Status Codes
-        print(f"\n📈 HTTP STATUS CODES:")
+        print(f"\n{Colors.INFO}📈 HTTP STATUS CODES:{Colors.RESET}")
         for status, count in sorted(self.stats['status_codes'].items()):
             percentage = (count / self.stats['total_requests']) * 100
             status_text = self._get_status_text(status)
-            print(f"   {status} {status_text:<20} {count:>8,} ({percentage:>5.1f}%)")
+
+            # Farbe basierend auf Status Code
+            if 200 <= status < 300:
+                status_color = Colors.GREEN
+            elif 300 <= status < 400:
+                status_color = Colors.BLUE
+            elif 400 <= status < 500:
+                status_color = Colors.YELLOW
+            else:
+                status_color = Colors.RED
+
+            print(f"   {Colors.colorize(str(status), status_color)} {status_text:<20} {Colors.BOLD}{count:>8,}{Colors.RESET} ({Colors.GREEN}{percentage:>5.1f}%{Colors.RESET})")
 
         # HTTP Methods
-        print(f"\n🔧 HTTP METHODS:")
+        print(f"\n{Colors.INFO}🔧 HTTP METHODS:{Colors.RESET}")
         for method, count in self.stats['methods'].most_common():
             percentage = (count / self.stats['total_requests']) * 100
-            print(f"   {method:<8} {count:>8,} ({percentage:>5.1f}%)")
+            method_color = Colors.GREEN if method == 'GET' else Colors.YELLOW if method == 'POST' else Colors.CYAN
+            print(f"   {Colors.colorize(method, method_color):<8} {Colors.BOLD}{count:>8,}{Colors.RESET} ({Colors.GREEN}{percentage:>5.1f}%{Colors.RESET})")
 
         # Top Pages
-        print(f"\n📄 TOP 10 AUFGERUFENE SEITEN:")
-        for path, count in self.stats['top_pages'].most_common(10):
+        print(f"\n{Colors.INFO}📄 TOP 10 AUFGERUFENE SEITEN:{Colors.RESET}")
+        for i, (path, count) in enumerate(self.stats['top_pages'].most_common(10), 1):
             percentage = (count / self.stats['total_requests']) * 100
             path_display = path[:50] + "..." if len(path) > 50 else path
-            print(f"   {count:>6,} ({percentage:>5.1f}%) {path_display}")
+            print(f"   {Colors.GRAY}{i:>2}.{Colors.RESET} {Colors.BOLD}{count:>6,}{Colors.RESET} ({Colors.GREEN}{percentage:>5.1f}%{Colors.RESET}) {Colors.CYAN}{path_display}{Colors.RESET}")
 
         # Hourly Traffic (nur wenn relevant)
         if self.time_filter in ['heute', 'diese_woche']:
-            print(f"\n⏰ TRAFFIC NACH STUNDEN:")
+            print(f"\n{Colors.INFO}⏰ TRAFFIC NACH STUNDEN:{Colors.RESET}")
             for hour in range(24):
                 count = self.stats['hourly_traffic'][hour]
                 if count > 0:
                     percentage = (count / self.stats['total_requests']) * 100
-                    bar = "█" * min(int(percentage), 50)
-                    print(f"   {hour:>2}:00 {count:>6,} {bar} ({percentage:>5.1f}%)")
+                    bar_length = min(int(percentage), 50)
+                    bar = Colors.GREEN + "█" * bar_length + Colors.RESET
+                    print(f"   {Colors.BOLD}{hour:>2}:00{Colors.RESET} {Colors.BOLD}{count:>6,}{Colors.RESET} {bar} ({Colors.GREEN}{percentage:>5.1f}%{Colors.RESET})")
 
         # Daily Traffic
         if self.stats['daily_traffic']:
             days_to_show = 7 if self.time_filter != 'heute' else 1
-            print(f"\n📅 TRAFFIC NACH TAGEN (letzte {days_to_show}):")
+            print(f"\n{Colors.INFO}📅 TRAFFIC NACH TAGEN (letzte {days_to_show}):{Colors.RESET}")
             for date_str, count in sorted(self.stats['daily_traffic'].items())[-days_to_show:]:
                 percentage = (count / self.stats['total_requests']) * 100
-                print(f"   {date_str} {count:>8,} ({percentage:>5.1f}%)")
+                print(f"   {Colors.CYAN}{date_str}{Colors.RESET} {Colors.BOLD}{count:>8,}{Colors.RESET} ({Colors.GREEN}{percentage:>5.1f}%{Colors.RESET})")
 
         # Top User Agents
-        print(f"\n🤖 TOP 5 USER AGENTS:")
-        for ua, count in self.stats['user_agents'].most_common(5):
+        print(f"\n{Colors.INFO}🤖 TOP 5 USER AGENTS:{Colors.RESET}")
+        for i, (ua, count) in enumerate(self.stats['user_agents'].most_common(5), 1):
             percentage = (count / self.stats['total_requests']) * 100
             ua_display = ua[:70] + "..." if len(ua) > 70 else ua
-            print(f"   {count:>6,} ({percentage:>5.1f}%) {ua_display}")
+            print(f"   {Colors.GRAY}{i}.{Colors.RESET} {Colors.BOLD}{count:>6,}{Colors.RESET} ({Colors.GREEN}{percentage:>5.1f}%{Colors.RESET}) {Colors.GRAY}{ua_display}{Colors.RESET}")
 
         # Bot Traffic
         if self.stats['bot_requests']:
-            print(f"\n🕷️  TOP BOT IPs:")
+            print(f"\n{Colors.WARNING}🕷️  TOP BOT IPs:{Colors.RESET}")
             for ip, count in self.stats['bot_requests'].most_common(5):
-                print(f"   {ip:<15} {count:>6,} bot requests")
+                print(f"   {Colors.MAGENTA}{ip:<15}{Colors.RESET} {Colors.BOLD}{count:>6,}{Colors.RESET} bot requests")
 
         # Suspicious Activity
         if self.stats['suspicious_ips']:
-            print(f"\n⚠️  VERDÄCHTIGE IPs:")
+            print(f"\n{Colors.WARNING}⚠️  VERDÄCHTIGE IPs:{Colors.RESET}")
             for ip, count in self.stats['suspicious_ips'].most_common(10):
-                print(f"   {ip:<15} {count:>6,} verdächtige requests")
+                print(f"   {Colors.RED}{ip:<15}{Colors.RESET} {Colors.BOLD}{count:>6,}{Colors.RESET} verdächtige requests")
 
         # Recent Errors
         if self.stats['error_requests']:
-            print(f"\n❌ LETZTE 5 FEHLER-REQUESTS:")
+            print(f"\n{Colors.ERROR}❌ LETZTE 5 FEHLER-REQUESTS:{Colors.RESET}")
             for error in self.stats['error_requests'][-5:]:
-                print(f"   {error['status']} {error['ip']} {error['path'][:40]} [{error['source']}]")
+                status_color = Colors.YELLOW if 400 <= error['status'] < 500 else Colors.RED
+                print(f"   {Colors.colorize(str(error['status']), status_color)} {Colors.RED}{error['ip']}{Colors.RESET} {Colors.GRAY}{error['path'][:40]}{Colors.RESET} [{Colors.CYAN}{error['source']}{Colors.RESET}]")
 
     def _get_status_text(self, status):
         """Gibt Beschreibung für HTTP Status Code zurück"""
@@ -400,26 +430,26 @@ class NginxLogAnalyzer:
                 percentage = (count / self.stats['total_requests']) * 100
                 writer.writerow([ip, count, f"{percentage:.2f}%"])
 
-        print(f"\n💾 CSV Export gespeichert: {filename}")
+        print(f"\n{Colors.SUCCESS}💾 CSV Export gespeichert: {filename}{Colors.RESET}")
 
 def main():
     parser = argparse.ArgumentParser(
         description='nginx Multi-Log Access Analyzer mit Zeitfilter',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=f"""
-VERFÜGBARE LOG-DATEIEN:
-{chr(10).join([f"  {name}: {path}" for name, path in LOG_FILES.items()])}
+{Colors.HEADER}VERFÜGBARE LOG-DATEIEN:{Colors.RESET}
+{chr(10).join([f"  {Colors.CYAN}{name}{Colors.RESET}: {path}" for name, path in LOG_FILES.items()])}
 
-ZEITFILTER:
-  heute           - Nur heutige Einträge
-  diese_woche     - Einträge seit Montag dieser Woche
-  dieser_monat    - Einträge seit 1. des aktuellen Monats
-  gesamter_zeitraum - Alle verfügbaren Einträge (Standard)
+{Colors.HEADER}ZEITFILTER:{Colors.RESET}
+  {Colors.GREEN}heute{Colors.RESET}           - Nur heutige Einträge
+  {Colors.YELLOW}diese_woche{Colors.RESET}     - Einträge seit Montag dieser Woche
+  {Colors.BLUE}dieser_monat{Colors.RESET}    - Einträge seit 1. des aktuellen Monats
+  {Colors.MAGENTA}gesamter_zeitraum{Colors.RESET} - Alle verfügbaren Einträge (Standard)
 
-BEISPIELE:
-  {sys.argv[0]} start wiki --zeit heute
-  {sys.argv[0]} alle --zeit diese_woche --csv
-  {sys.argv[0]} immich bilder --zeit dieser_monat
+{Colors.HEADER}BEISPIELE:{Colors.RESET}
+  {Colors.CYAN}{sys.argv[0]} start wiki --zeit heute{Colors.RESET}
+  {Colors.CYAN}{sys.argv[0]} alle --zeit diese_woche --csv{Colors.RESET}
+  {Colors.CYAN}{sys.argv[0]} immich bilder --zeit dieser_monat{Colors.RESET}
         """
     )
 
@@ -447,7 +477,7 @@ BEISPIELE:
         selected_logs = [LOG_FILES[log] for log in args.logs if log in LOG_FILES]
 
     if not selected_logs:
-        print("❌ Keine gültigen Log-Dateien ausgewählt!")
+        print(f"{Colors.ERROR}❌ Keine gültigen Log-Dateien ausgewählt!{Colors.RESET}")
         sys.exit(1)
 
     # Analyzer initialisieren und ausführen
@@ -459,10 +489,10 @@ BEISPIELE:
         if args.csv:
             analyzer.export_csv(args.csv_file)
     else:
-        print("❌ Keine Log-Dateien konnten verarbeitet werden!")
+        print(f"{Colors.ERROR}❌ Keine Log-Dateien konnten verarbeitet werden!{Colors.RESET}")
         sys.exit(1)
 
-    print(f"\n✅ Analyse abgeschlossen!")
+    print(f"\n{Colors.SUCCESS}✅ Analyse abgeschlossen!{Colors.RESET}")
 
 if __name__ == "__main__":
     main()
