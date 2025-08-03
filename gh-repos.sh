@@ -8,7 +8,7 @@ REPOS=(
   "ChrisTitusTech/linutil"
   "immich-app/immich"
   "community-scripts/ProxmoxVE"
-  "zellij-org/zellij"  
+  "zellij-org/zellij"
   "mylinuxforwork/dotfiles"
   "kovidgoyal/kitty"
   "sxyazi/yazi"
@@ -18,6 +18,7 @@ REPOS=(
   "Antiz96/zaman"
   "CachyOS/cachyos-niri-settings"
   "CachyOS/cachy-update"
+  "Ly-sec/Noctalia"
 )
 
 
@@ -46,7 +47,7 @@ check_dependencies() {
   for cmd in gh jq fzf; do
     command -v "$cmd" >/dev/null || missing+=("$cmd")
   done
-  
+
   if [[ ${#missing[@]} -gt 0 ]]; then
     log_error "Fehlende Dependencies: ${missing[*]}"
     echo "Installation:"
@@ -70,19 +71,19 @@ is_cache_valid() {
 fetch_repo_data() {
   local repo="$1"
   local cache_file=$(get_cache_file "$repo")
-  
+
   if is_cache_valid "$cache_file"; then
     cat "$cache_file"
     return
   fi
-  
+
   log_info "Fetching data for $repo..."
-  
+
   # Kombinierte API-Abfrage
   local repo_data release_data
   repo_data=$(gh api "repos/$repo" 2>/dev/null || echo '{}')
   release_data=$(gh api "repos/$repo/releases/latest" 2>/dev/null || echo '{}')
-  
+
   # Kombiniere die Daten
   jq -n \
     --argjson repo "$repo_data" \
@@ -92,7 +93,7 @@ fetch_repo_data() {
       release: $release,
       fetched_at: now
     }' > "$cache_file"
-  
+
   cat "$cache_file"
 }
 
@@ -100,7 +101,7 @@ format_relative_time() {
   local timestamp="$1"
   local now=$(date +%s)
   local diff=$((now - timestamp))
-  
+
   if [[ $diff -lt 3600 ]]; then
     echo "$((diff / 60))m"
   elif [[ $diff -lt 86400 ]]; then
@@ -117,18 +118,18 @@ get_activity_indicator() {
   local release_timestamp="$2"
   local now=$(date +%s)
   local cutoff=$((now - RELEASE_CUTOFF_HOURS * 3600))
-  
+
   local indicators=""
-  
+
   # Neue Releases
   [[ $release_timestamp -gt $cutoff ]] && indicators+="🆕"
-  
+
   # Hohe Aktivität (Push in letzten 24h)
   [[ $push_timestamp -gt $((now - 86400)) ]] && indicators+="🔥"
-  
+
   # Archiviert/inaktiv (kein Push in 6 Monaten)
   [[ $push_timestamp -lt $((now - 15552000)) ]] && indicators+="💤"
-  
+
   echo "$indicators"
 }
 
@@ -137,7 +138,7 @@ show_stats() {
   local total=$(wc -l < "$tempfile")
   local with_new_releases=$(grep -c "🆕" "$tempfile" || echo 0)
   local highly_active=$(grep -c "🔥" "$tempfile" || echo 0)
-  
+
   echo
   log_info "Statistik: $total Repos | $with_new_releases neue Releases | $highly_active hochaktiv"
   echo
@@ -205,15 +206,15 @@ now=$(date +%s)
 
 for repo in "${REPOS[@]}"; do
   data=$(fetch_repo_data "$repo")
-  
+
   # Repository-Info extrahieren
   pushed_at=$(jq -r '.repo.pushed_at // empty' <<< "$data")
   stars=$(jq -r '.repo.stargazers_count // 0' <<< "$data")
-  
+
   # Release-Info
   release_tag=$(jq -r '.release.tag_name // empty' <<< "$data")
   release_date=$(jq -r '.release.published_at // empty' <<< "$data")
-  
+
   # Timestamps berechnen
   if [[ -n "$pushed_at" ]]; then
     push_timestamp=$(date -d "$pushed_at" +%s)
@@ -224,7 +225,7 @@ for repo in "${REPOS[@]}"; do
     formatted_push="unbekannt"
     relative_push="?"
   fi
-  
+
   # Release-Informationen
   if [[ -n "$release_tag" && "$release_tag" != "null" ]]; then
     release_timestamp=$(date -d "$release_date" +%s)
@@ -234,17 +235,17 @@ for repo in "${REPOS[@]}"; do
     release_timestamp=0
     release_display="🚫 no release"
   fi
-  
+
   # Aktivitätsindikatoren
   activity=$(get_activity_indicator "$push_timestamp" "$release_timestamp")
-  
+
   # Stars formatieren
   if [[ $stars -gt 1000 ]]; then
     stars_display="$(echo "scale=1; $stars/1000" | bc)k⭐"
   else
     stars_display="${stars}⭐"
   fi
-  
+
   # Ausgabezeile zusammenstellen
   printf "%s|%s|%s|%s|%s (%s)|%s\n" \
     "$push_timestamp" \
@@ -277,17 +278,17 @@ selected=$(printf "%s\n" "$results" \
     --bind='ctrl-s:execute(gh repo view {1})' \
     --color=header:italic)
 
-# Auf Auswahl reagieren  
+# Auf Auswahl reagieren
 if [[ -n "$selected" ]]; then
   repo_name=$(awk '{print $1}' <<< "$selected")
-  
+
   echo
   log_info "Repository: $repo_name"
-  
+
   # Zusätzliche Aktionen anbieten
   action=$(echo -e "🌐 Im Browser öffnen\n📊 Repository-Details\n📋 Issues anzeigen\n🔄 Pull Requests\n📈 Releases" \
     | fzf --height=40% --prompt="Aktion wählen: " --border)
-  
+
   case "$action" in
     *"Browser"*)
       gh repo view "$repo_name" --web

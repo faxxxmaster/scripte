@@ -12,23 +12,6 @@ LOG-DATEIEN:
 /var/log/nginx/bilder_access.log
 
 ZEITFILTER: heute | diese_woche | dieser_monat | gesamter_zeitraum
-
-
-# Einzelne Log-Datei, heute
-python3 nginx_access_log_analyzer.py start --zeit heute
-
-# Mehrere Logs, diese Woche
-python3 nginx_access_log_analyzer.py start wiki pad --zeit diese_woche
-
-# Alle Logs, dieser Monat mit CSV-Export
-python3 nginx_access_log_analyzer.py alle --zeit dieser_monat --csv
-
-# Spezifische Logs, gesamter Zeitraum
-python3 nginx_access_log_analyzer.py immich bilder --zeit gesamter_zeitraum
-
-# Hilfe anzeigen
-python3 nginx_access_log_analyzer.py --help
-
 """
 
 import re
