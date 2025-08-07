@@ -1,0 +1,147 @@
+mount-daten() {
+    local uuid="xxxxxxxxxxxxxxxxxxx"
+    local mapper_name="daten_crypt"
+    local mount_point="/home/user/ordner"
+
+    # Prüfe ob bereits gemountet
+    if mountpoint -q "$mount_point"; then
+        echo "✓ DATEN-Festplatte ist bereits gemountet"
+        df -h "$mount_point"
+        cd "$mount_point"
+        echo "→ Verzeichnis gewechselt zu $(pwd)"
+        echo ""
+        echo "Inhalt des DATEN-Laufwerks:"
+        ls -lah --color=auto
+        return 0
+    fi
+
+    # Prüfe ob LUKS-Container bereits offen ist
+    if sudo cryptsetup status "$mapper_name" >/dev/null 2>&1; then
+        echo "LUKS-Container bereits geöffnet, versuche zu mounten..."
+        if sudo mount /dev/mapper/$mapper_name "$mount_point"; then
+            echo "✓ DATEN-Festplatte erfolgreich gemountet"
+            df -h "$mount_point"
+            cd "$mount_point"
+            echo "→ Verzeichnis gewechselt zu $(pwd)"
+            echo ""
+            echo "Inhalt des DATEN-Laufwerks:"
+            ls -lah --color=auto
+            return 0
+        fi
+    fi
+
+    # Erstelle Mount-Point falls nicht vorhanden
+    if [ ! -d "$mount_point" ]; then
+        mkdir -p "$mount_point"
+    fi
+
+    echo "Öffne verschlüsselte DATEN-Partition..."
+    if sudo cryptsetup luksOpen UUID=$uuid $mapper_name; then
+        echo "Mounte nach $mount_point..."
+        if sudo mount /dev/mapper/$mapper_name "$mount_point"; then
+            echo "✓ DATEN-Festplatte erfolgreich gemountet"
+            df -h "$mount_point"
+            cd "$mount_point"
+            echo "→ Verzeichnis gewechselt zu $(pwd)"
+            echo ""
+            echo "Inhalt des DATEN-Laufwerks:"
+            ls -lah --color=auto
+        else
+            echo "✗ Fehler beim Mounten"
+            sudo cryptsetup luksClose $mapper_name
+        fi
+    else
+        echo "✗ Fehler beim Öffnen der LUKS-Partition"
+    fi
+}
+
+# goto-daten auch mit Auflistung erweitern
+goto-daten() {
+    local mount_point="/home/gc/DATEN"
+    if mountpoint -q "$mount_point"; then
+        cd "$mount_point"
+        echo "→ Verzeichnis gewechselt zu $(pwd)"
+        echo ""
+        echo "Inhalt des DATEN-Laufwerks:"
+        ls -lah --color=auto
+    else
+        echo "DATEN-Festplatte ist nicht gemountet. Verwende 'mount-daten' zuerst."
+    fi
+}
+
+# Umount-Funktion bleibt gleich
+umount-daten() {
+    local mapper_name="daten_crypt"
+    local mount_point="/home/gc/DATEN"
+    local current_dir="$(pwd)"
+
+    # Prüfe ob wir aktuell im DATEN-Verzeichnis oder Unterverzeichnis sind
+    if [[ "$current_dir" == "$mount_point"* ]]; then
+        echo "← Verlasse DATEN-Verzeichnis (aktuell: $current_dir)"
+        cd "$HOME"
+        echo "→ Verzeichnis gewechselt zu $(pwd)"
+    fi
+
+    if ! mountpoint -q "$mount_point"; then
+        echo "DATEN-Festplatte ist nicht gemountet"
+        # Prüfe trotzdem ob LUKS-Container offen ist
+        if sudo cryptsetup status "$mapper_name" >/dev/null 2>&1; then
+            echo "Schließe offenen LUKS-Container..."
+            sudo cryptsetup luksClose "$mapper_name"
+        fi
+        return 0
+    fi
+
+    echo "Unmounte DATEN-Partition..."
+    if sudo umount "$mount_point"; then
+        echo "Schließe LUKS-Container..."
+        if sudo cryptsetup luksClose "$mapper_name"; then
+            echo "✓ DATEN-Festplatte sicher ausgehängt"
+        else
+            echo "⚠ Warnung: LUKS-Container konnte nicht geschlossen werden"
+        fi
+    else
+        echo "✗ Fehler beim Unmounten von $mount_point"
+        echo "Möglicherweise sind noch Dateien/Programme in Benutzung"
+        echo "Versuche: lsof +D $mount_point"
+    fi
+}
+
+# Force-Cleanup bleibt gleich
+cleanup-daten() {
+    local mapper_name="daten_crypt"
+    local mount_point="/home/gc/DATEN"
+    local current_dir="$(pwd)"
+
+    # Verlasse DATEN-Verzeichnis falls wir dort sind
+    if [[ "$current_dir" == "$mount_point"* ]]; then
+        echo "← Verlasse DATEN-Verzeichnis für Cleanup"
+        cd "$HOME"
+    fi
+
+    echo "Erzwinge Cleanup der DATEN-Partition..."
+    # Zeige Prozesse die das Verzeichnis blockieren könnten
+    sudo lsof +D "$mount_point" 2>/dev/null || true
+
+    sudo umount "$mount_point" 2>/dev/null
+    sudo cryptsetup luksClose "$mapper_name" 2>/dev/null
+    echo "Cleanup abgeschlossen"
+}
+
+# Erweiterte Status-Funktion mit Inhaltsanzeige
+check-daten() {
+    local mount_point="/home/gc/DATEN"
+    if mountpoint -q "$mount_point"; then
+        echo "✓ DATEN-Festplatte ist gemountet:"
+        df -h "$mount_point"
+        echo "Aktuelles Verzeichnis: $(pwd)"
+        if [[ "$(pwd)" == "$mount_point"* ]]; then
+            echo "→ Du bist aktuell im DATEN-Verzeichnis"
+        fi
+        echo ""
+        echo "Inhalt des DATEN-Laufwerks:"
+        ls -lah --color=auto "$mount_point"
+    else
+        echo "✗ DATEN-Festplatte ist nicht gemountet"
+    fi
+}
