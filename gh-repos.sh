@@ -12,15 +12,12 @@ REPOS=(
   "mylinuxforwork/dotfiles"
   "kovidgoyal/kitty"
   "sxyazi/yazi"
-  "jordan-dalby/ByteStash"
   "DumbWareio/DumbPad"
-  "SourcewareLab/Toney"
-  "Antiz96/zaman"
   "CachyOS/cachyos-niri-settings"
   "CachyOS/cachy-update"
   "Ly-sec/Noctalia"
+  "thomasschafer/scooter"
 )
-
 
 # Konfigurierbare Zeiträume
 RELEASE_CUTOFF_HOURS=${RELEASE_CUTOFF_HOURS:-48}  # Für "neu" Markierung

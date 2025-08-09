@@ -3,7 +3,7 @@
 # Script to start/stop/update multiple docker-compose setups
 # Place this script in /root/docker/ directory
 ############
-# Faxxxmaster 03/2025
+# Faxxxmaster 08/2025
 ############
 ACTION=$1
 ##########################
@@ -21,14 +21,14 @@ fi
 run_docker_compose() {
   local action=$1
   local dir=$2
-  
+
   echo "=== Processing $dir ==="
-  
+
   cd "$dir" || {
     echo "Error: Could not change to directory $dir"
     return 1
   }
-  
+
   case "$action" in
     start)
       echo "Starting docker-compose in $dir..."
@@ -58,7 +58,7 @@ run_docker_compose() {
       return 1
       ;;
   esac
-  
+
   echo ""
 }
 

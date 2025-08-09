@@ -1,7 +1,15 @@
+############################
+# Faxxxmaster 08/2025
+# sicheres mounten von verschlüsselten Lucs2- Festplatten
+# einbinden in die .zshrc oder .bashrc mit "source /dir/mount-daten"
+############################
+
+
+
 mount-daten() {
     local uuid="xxxxxxxxxxxxxxxxxxx"
     local mapper_name="daten_crypt"
-    local mount_point="/home/user/ordner"
+    local mount_point="/home/user/folder"
 
     # Prüfe ob bereits gemountet
     if mountpoint -q "$mount_point"; then
