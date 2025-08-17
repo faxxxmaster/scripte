@@ -13,10 +13,10 @@ REPOS=(
   "kovidgoyal/kitty"
   "sxyazi/yazi"
   "DumbWareio/DumbPad"
-  "CachyOS/cachyos-niri-settings"
-  "CachyOS/cachy-update"
-  "Ly-sec/Noctalia"
+  "abenz1267/walker"
+   "Ly-sec/Noctalia"
   "thomasschafer/scooter"
+  "prime-run/togo"
 )
 
 # Konfigurierbare Zeiträume
