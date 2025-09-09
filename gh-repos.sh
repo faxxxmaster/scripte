@@ -17,6 +17,7 @@ REPOS=(
    "Ly-sec/Noctalia"
   "thomasschafer/scooter"
   "prime-run/togo"
+  "Adembc/lazyssh"
 )
 
 # Konfigurierbare Zeiträume
