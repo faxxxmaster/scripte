@@ -10,8 +10,8 @@ Installation auf Debian/Ubuntu:
     sudo apt update
     sudo apt install python3-psutil python3-requests
 
-Note: Installing via system package manager (pacman/apt) is preferred 
-as it integrates better with the system package management and 
+Note: Installing via system package manager (pacman/apt) is preferred
+as it integrates better with the system package management and
 ensures compatibility with system updates.
 
 Alternative installation mit pip (für den Fall das!):
@@ -23,7 +23,7 @@ Alternative installation mit pip (für den Fall das!):
 Funktionen bis jetzt 17.11.24:
 - Pushover-nachrichten  besiger  CPU, Speicher- oder Festplattenauslastung / Verte können angepasst werden
 - Pushover-nachrichten bei Ausfall und erneuter Start vordefinierter Dienste
-- Pushover-nachrichten bei einer erfolgrteichen Anmeldung über ssh mit LoginName und IP 
+- Pushover-nachrichten bei einer erfolgrteichen Anmeldung über ssh mit LoginName und IP
 
 
 
@@ -60,8 +60,8 @@ class ServerMonitor:
     def check_service_status(self, service_name):
         """Verbesserte Dienst-Überprüfung mit systemctl"""
         try:
-            result = subprocess.run(['systemctl', 'is-active', service_name], 
-                                 capture_output=True, 
+            result = subprocess.run(['systemctl', 'is-active', service_name],
+                                 capture_output=True,
                                  text=True)
             return result.stdout.strip() == 'active'
         except Exception as e:
@@ -72,19 +72,19 @@ class ServerMonitor:
         """Initiale Überprüfung aller Dienste"""
         print("Performing initial service check...")
         offline_services = []
-        
+
         for service in services:
             if not self.check_service_status(service):
                 offline_services.append(service)
                 self.service_status[service] = False
             else:
                 self.service_status[service] = True
-        
+
         if offline_services:
             message = f"Initial check - Services offline: {', '.join(offline_services)}"
             self.send_pushover_alert(message, priority=2)
             print(message)
-    
+
     def send_pushover_alert(self, message, priority=1):
         """Send alert via Pushover API with improved error handling"""
         payload = {
@@ -94,14 +94,14 @@ class ServerMonitor:
             'priority': priority,
             'title': 'Server Alert'
         }
-        
+
         # Füge expire und retry für Emergency-Priorität (2) hinzu
         if priority == 2:
             payload.update({
                 'expire': 10800,  # 3 Stunden in Sekunden
                 'retry': 60       # Wiederholung alle 60 Sekunden
             })
-        
+
         try:
             response = requests.post(
                 'https://api.pushover.net/1/messages.json',
@@ -127,29 +127,29 @@ class ServerMonitor:
             try:
                 current_status = self.check_service_status(service)
                 previous_status = self.service_status.get(service, True)
-                
+
                 # Service ist ausgefallen
                 if not current_status and previous_status:
                     alert_message = f'Service {service} is not running!'
                     alert_sent = self.send_pushover_alert(alert_message, priority=2)
-                    
+
                     if alert_sent:
                         print(f"Service Alert sent! {service} is not running!")
                     else:
                         print(f"Failed to send alert for {service}")
-                
+
                 # Service ist wieder verfügbar
                 elif current_status and not previous_status:
                     recovery_message = f'Service {service} has recovered and is now running!'
                     alert_sent = self.send_pushover_alert(recovery_message, priority=1)
-                    
+
                     if alert_sent:
                         print(f"Recovery Alert sent! {service} is running again!")
                     else:
                         print(f"Failed to send recovery alert for {service}")
-                
+
                 self.service_status[service] = current_status
-                
+
             except Exception as e:
                 print(f"Error monitoring service {service}: {e}")
 
@@ -190,72 +190,80 @@ class ServerMonitor:
             # Benutze die Zeit seit der letzten Prüfung
             time_diff = (current_time - self.last_login_check).total_seconds()
             since_param = f"{int(time_diff + 5)}s ago"  # +5 Sekunden Überlappung zur Sicherheit
-            
+
             output = subprocess.check_output(
                 ['journalctl', '-u', 'sshd', '--since', since_param],
                 universal_newlines=True
             )
-            
+
             login_pattern = r'Accepted (?:password|publickey) for (\w+) from ([\d\.]+)'
             matches = re.finditer(login_pattern, output)
-            
+
             current_logins = set()
             for match in matches:
                 username = match.group(1)
                 ip = match.group(2)
                 login_info = f"{username}:{ip}"
                 current_logins.add(login_info)
-            
+
             # Finde nur neue Logins
             new_logins = current_logins - self.last_ssh_logins
-            
+
             # Sende Benachrichtigungen nur für neue Logins
             for login_info in new_logins:
                 username, ip = login_info.split(':')
                 message = f'SSH Login: User {username} from IP {ip}'
                 self.send_pushover_alert(message, priority=1)
                 print(f"SSH Alert sent! {message}")
-            
+
             # Aktualisiere den Zustand
             self.last_ssh_logins = current_logins
             self.last_login_check = current_time
-            
+
         except Exception as e:
             print(f"Error checking SSH logins: {str(e)}")
 
 def main():
+
+"""
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
     # Replace with your Pushover credentials
-    PUSHOVER_USER_KEY = 'unuvrsdj79pn1wtj41uckk7pqz2ioq'
-    PUSHOVER_API_TOKEN = 'a69x6xu2dmre7oecv5jnwhh1z5mux3'
-    
+
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+"""
+
+    PUSHOVER_USER_KEY = 'xxxxxxxxxxxxxxxxxxxx'
+    PUSHOVER_API_TOKEN = 'xxxxxxxxxxxxxxxxxxxxxx'
+
     SERVICES_TO_MONITOR = [
         'sshd.service',
         'mysqld.service'
     ]
-    
+
     monitor = ServerMonitor(PUSHOVER_USER_KEY, PUSHOVER_API_TOKEN)
-    
+
     try:
         # Send test notification on startup
         monitor.send_pushover_alert('Server monitoring started', priority=0)
         print("Monitoring started...")
-        
+
         # Initiale Überprüfung
         monitor.initial_service_check(SERVICES_TO_MONITOR)
-        
+
         while True:
             try:
                 monitor.check_system_resources()
                 monitor.monitor_services(SERVICES_TO_MONITOR)
                 monitor.check_ssh_logins()
                 time.sleep(2)
-                
+
             except Exception as e:
                 error_msg = f'Monitoring error: {str(e)}'
                 monitor.send_pushover_alert(error_msg, priority=2)
                 print(error_msg)
                 time.sleep(60)
-                
+
     except KeyboardInterrupt:
         print("\nMonitoring stopped by user")
     except Exception as e:
