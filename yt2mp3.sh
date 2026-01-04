@@ -3,12 +3,14 @@
 # Faxxxmaster 01/25
 # Download von Youtubevideos als mp3 mit yt-dlp.
 # Automatische Erkennung von Listen mit anschliessender numeriernung in einem eigenen Ordner.
+# erstellt eine .m3u falls eine Playlist runtergeladen wurde
 
 # Abhängigkeiten:
 # - yt-dlp	            Download-Logik & Metadaten - Zwingend!
 # - FFmpeg	            Konvertierung zu MP3 - Zwingend für Audio-Extraktion!
 # - Deno / Node.js	    Lösen von JS-Challenges - Zwingend für YouTube (2025/26)!
 # - Firefox	            Authentifizierung via Cookies - Empfohlen gegen Bot-Sperren
+
 
 # Wichtigste Parameter von yt-dlp:
 # --remote-components: Erlaubt das Laden der Solver-Skripte von GitHub
@@ -20,9 +22,10 @@
 # --no-overwrites: Verhindert das erneute Herunterladen einer Datei, wenn sie bereits im Zielordner existiert
 # -o erkennung von Einzeltitel oder Playlist mit entsprechender Benennung und Nummerierung
 
-# wenn die Playlist Falschrum ist dann parameter: --playlist-reverse \ hinzufügen!
+# wenn die Playlist Falschrum ist dann parameter: "--playlist-reverse \"  hinzufügen!
 # keine Kommentare innerhalb der Parameter!
 
+# bei einer neueren version vllt noch hinzufügen:  --impersonate-client chrome \
 
 # --- KONFIGURATION ---
 DOWNLOAD_DIR="$HOME/Musik/Youtube_Downloads"
@@ -53,7 +56,7 @@ if [ ${#MISSING_TOOLS[@]} -gt 0 ]; then
     echo "Installationshinweise:"
     echo "  yt-dlp:  sudo pacman -S yt-dlp"
     echo "  ffmpeg:  sudo pacman -S ffmpeg"
-    echo "  deno:    sudo pacman -S deno  (oder aus AUR: yay -S deno)"
+    echo "  deno:    sudo pacman -S deno"
     exit 1
 fi
 
@@ -99,9 +102,30 @@ yt-dlp \
     --add-metadata \
     --no-overwrites \
     --no-warnings \
+    --playlist-reverse \
     --autonumber-start 1 \
     -o "$DOWNLOAD_DIR/%(playlist_title|Einzelvideos)s/%(autonumber)02d-%(title)s.%(ext)s" \
     "$URL"
+
+# --- PLAYLIST (.m3u) ERSTELLUNG ---
+# im Download-Verzeichnis nach dem neuesten Unterordner suchen
+# Falls es eine Playlist war, erstellen der .m3u Datei
+echo "Erstelle Playlist-Datei..."
+
+# Suche alle Unterordner (außer 'Einzelvideos') und erstelle dort die m3u
+find "$DOWNLOAD_DIR" -mindepth 1 -maxdepth 1 -type d | while read -r dir; do
+    if [ "$(basename "$dir")" != "Einzelvideos" ]; then
+        # Erstellt eine Liste aller mp3-Dateien, sortiert nach Namen
+        ls -1 "$dir"/*.mp3 2>/dev/null | xargs -n 1 basename > "$dir/playlist.m3u"
+
+        # Optional: Das Thumbnail in 'cover.jpg' umbenennen, falls vorhanden
+        if [ -f "$dir"/*.jpg ]; then
+            # Nimmt das erste gefundene jpg und nennt es cover.jpg
+            first_jpg=$(ls -1 "$dir"/*.jpg | head -n 1)
+            mv "$first_jpg" "$dir/cover.jpg" 2>/dev/null
+        fi
+    fi
+done
 
 echo "---"
 echo "✓ Download abgeschlossen!"
