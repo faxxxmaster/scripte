@@ -22,9 +22,6 @@
 # --no-overwrites: Verhindert das erneute Herunterladen einer Datei, wenn sie bereits im Zielordner existiert
 # -o erkennung von Einzeltitel oder Playlist mit entsprechender Benennung und Nummerierung
 
-# wenn die Playlist Falschrum ist dann parameter: "--playlist-reverse \"  hinzufügen!
-# keine Kommentare innerhalb der Parameter!
-
 # bei einer neueren version vllt noch hinzufügen:  --impersonate-client chrome \
 
 # --- KONFIGURATION ---
@@ -85,11 +82,29 @@ if [[ ! "$URL" =~ (youtube\.com|youtu\.be|soundcloud\.com|vimeo\.com) ]]; then
     fi
 fi
 
+# --- ABFRAGE DER REIHENFOLGE ---
+# soll sicherstellen dass die Nummerierung der Folgen richtig ist!
+
+echo "Soll die Playlist umgedreht werden? (Teil 1 ist unten in der Liste)"
+echo "1) JA (Reverse - fängt unten an)"
+echo "2) NEIN (Normal - fängt oben an)"
+read -p "Auswahl [1 oder 2]: " CHOICE
+
+REVERSE_OPT=""
+if [ "$CHOICE" == "1" ]; then
+    REVERSE_OPT="--playlist-reverse"
+    echo "-> Download startet in umgekehrter Reihenfolge."
+else
+    echo "-> Download startet in normaler Reihenfolge."
+fi
+
+# erstelen Downloadordner falls nicht vorhanden
 mkdir -p "$DOWNLOAD_DIR"
 
 # --- DOWNLOAD ---
+echo "---"
 echo "Starte Download von: $URL"
-
+echo "---"
 # --- DOWNLOAD BEFEHL ---
 yt-dlp \
     -x \
@@ -102,7 +117,7 @@ yt-dlp \
     --add-metadata \
     --no-overwrites \
     --no-warnings \
-    --playlist-reverse \
+    $REVERSE_OPT \
     --autonumber-start 1 \
     -o "$DOWNLOAD_DIR/%(playlist_title|Einzelvideos)s/%(autonumber)02d-%(title)s.%(ext)s" \
     "$URL"
@@ -110,7 +125,9 @@ yt-dlp \
 # --- PLAYLIST (.m3u) ERSTELLUNG ---
 # im Download-Verzeichnis nach dem neuesten Unterordner suchen
 # Falls es eine Playlist war, erstellen der .m3u Datei
+echo "---"
 echo "Erstelle Playlist-Datei..."
+echo "---"
 
 # Suche alle Unterordner (außer 'Einzelvideos') und erstelle dort die m3u
 find "$DOWNLOAD_DIR" -mindepth 1 -maxdepth 1 -type d | while read -r dir; do
@@ -130,3 +147,4 @@ done
 echo "---"
 echo "✓ Download abgeschlossen!"
 echo "Dateien befinden sich in: $DOWNLOAD_DIR"
+echo "---"
