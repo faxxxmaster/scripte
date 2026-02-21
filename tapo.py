@@ -1,3 +1,14 @@
+# Faxxxmaster 02/2026
+# Überprüft den status des Akkus :  bei <20% wird die TAPO Steckdose eingeschaltet. Bei 80 wieder ausgeschaltet.
+# kann zb per cronjob alle 5 min gestartet werden:
+#
+# crontab -e
+# */5 * * * * /usr/bin/python3 /pfad/zum/script.py
+#
+# benötigt:
+# paru -S python-kasa
+# sudo pacman -S python-psutil
+
 import asyncio
 import psutil
 from kasa import Discover, Credentials
