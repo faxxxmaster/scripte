@@ -1,16 +1,16 @@
 #!/bin/bash -e
 
-# Faxxxmaster 01/25
+# Faxxxmaster 03/25
 # Download von Youtubevideos als mp3 mit yt-dlp.
 # Automatische Erkennung von Listen mit anschliessender numeriernung in einem eigenen Ordner.
 # erstellt eine .m3u falls eine Playlist runtergeladen wurde
+# nimmt playlistdownloads wieder auf. Fotschritt wird in einer .txt Datei im Dowloadordner gespeichert.
 
 # Abhängigkeiten:
 # - yt-dlp	            Download-Logik & Metadaten - Zwingend!
 # - FFmpeg	            Konvertierung zu MP3 - Zwingend für Audio-Extraktion!
 # - Deno / Node.js	    Lösen von JS-Challenges - Zwingend für YouTube (2025/26)!
 # - Firefox	            Authentifizierung via Cookies - Empfohlen gegen Bot-Sperren
-
 
 # Wichtigste Parameter von yt-dlp:
 # --remote-components: Erlaubt das Laden der Solver-Skripte von GitHub
@@ -22,24 +22,40 @@
 # --no-overwrites: Verhindert das erneute Herunterladen einer Datei, wenn sie bereits im Zielordner existiert
 # -o erkennung von Einzeltitel oder Playlist mit entsprechender Benennung und Nummerierung
 
-# bei einer neueren version vllt noch hinzufügen:  --impersonate-client chrome \
+# bei einer neueren Version vllt noch hinzufügen:  --impersonate-client chrome \
 
-# --- KONFIGURATION ---
+# --- KONFIGURATION ------------------------
+
 DOWNLOAD_DIR="$HOME/Musik/Youtube_Downloads"
 URL=$1
+# -------------------------------------------
+
+# Archivdatei pro Playlist/Video – verhindert Konflikte bei parallelen Downloads
+# Playlist-ID extrahieren (list=XXXX), Video-ID (v=XXXX) oder youtu.be/XXXX
+PLAYLIST_ID=$(echo "$URL" | grep -oP '(?<=list=)[^\&]+' || true)
+VIDEO_ID=$(echo "$URL" | grep -oP '(?<=[?&]v=)[^\&]+' ||
+    echo "$URL" | grep -oP '(?<=youtu\.be/)[^?]+' || true)
+
+if [ -n "$PLAYLIST_ID" ]; then
+    ARCHIVE_FILE="$DOWNLOAD_DIR/archiv_${PLAYLIST_ID}.txt"
+elif [ -n "$VIDEO_ID" ]; then
+    ARCHIVE_FILE="$DOWNLOAD_DIR/archiv_${VIDEO_ID}.txt"
+else
+    ARCHIVE_FILE="$DOWNLOAD_DIR/archiv_sonstige.txt"
+fi
 
 # Prüfe ob benötigte Programme installiert sind
 MISSING_TOOLS=()
 
-if ! command -v yt-dlp &> /dev/null; then
+if ! command -v yt-dlp &>/dev/null; then
     MISSING_TOOLS+=("yt-dlp")
 fi
 
-if ! command -v ffmpeg &> /dev/null; then
+if ! command -v ffmpeg &>/dev/null; then
     MISSING_TOOLS+=("ffmpeg")
 fi
 
-if ! command -v deno &> /dev/null; then
+if ! command -v deno &>/dev/null; then
     MISSING_TOOLS+=("deno")
 fi
 
@@ -104,6 +120,11 @@ mkdir -p "$DOWNLOAD_DIR"
 # --- DOWNLOAD ---
 echo "---"
 echo "Starte Download von: $URL"
+echo "Archivdatei: $ARCHIVE_FILE"
+if [ -f "$ARCHIVE_FILE" ]; then
+    ALREADY_DONE=$(wc -l <"$ARCHIVE_FILE")
+    echo "Archiv gefunden: $ALREADY_DONE bereits heruntergeladene Videos werden übersprungen."
+fi
 echo "---"
 # --- DOWNLOAD BEFEHL ---
 yt-dlp \
@@ -116,10 +137,12 @@ yt-dlp \
     --restrict-filenames \
     --add-metadata \
     --no-overwrites \
-    --no-warnings \
+    --download-archive "$ARCHIVE_FILE" \
+    --sleep-interval 3 \
+    --max-sleep-interval 8 \
+    --sleep-requests 1 \
     $REVERSE_OPT \
-    --autonumber-start 1 \
-    -o "$DOWNLOAD_DIR/%(playlist_title|Einzelvideos)s/%(autonumber)02d-%(title)s.%(ext)s" \
+    -o "$DOWNLOAD_DIR/%(playlist_title|Einzelvideos)s/%(playlist_index)03d-%(title)s.%(ext)s" \
     "$URL"
 
 # --- PLAYLIST (.m3u) ERSTELLUNG ---
@@ -133,7 +156,7 @@ echo "---"
 find "$DOWNLOAD_DIR" -mindepth 1 -maxdepth 1 -type d | while read -r dir; do
     if [ "$(basename "$dir")" != "Einzelvideos" ]; then
         # Erstellt eine Liste aller mp3-Dateien, sortiert nach Namen
-        ls -1 "$dir"/*.mp3 2>/dev/null | xargs -n 1 basename > "$dir/playlist.m3u"
+        ls -1 "$dir"/*.mp3 2>/dev/null | xargs -r -n 1 basename >"$dir/playlist.m3u"
 
         # Optional: Das Thumbnail in 'cover.jpg' umbenennen, falls vorhanden
         if [ -f "$dir"/*.jpg ]; then
