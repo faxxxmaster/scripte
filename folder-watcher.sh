@@ -1,64 +1,129 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# watch_downloads.sh
+# Voraussetzung: apt install inotify-tools
 
-# Überwacht einen Ordner nach neuen Dateien und sendet eine Pushover Nachricht
-# mit dem Dwonloadlink
+# ─── Konfiguration ────────────────────────────────────────────────────────────
+WATCH_DIR="/var/www/html/downloads"
+BASE_URL="https://downloads.faxxxmaster.cc"
+PUSHOVER_TOKEN="#############################"
+PUSHOVER_USER="###########################"
+PUSHOVER_TITLE="📥 Neuer Upload"
+COOLDOWN=8
+MAX_LIST=50
+LOCK_DIR="/tmp/watch_downloads_locks"
+# ─────────────────────────────────────────────────────────────────────────────
 
+log() { echo "[$(date '+%F %T')] $*"; }
 
-# benötigt:
-# sudo apt update
-# sudo apt install inotify-tools curl -y
+url_encode() {
+    python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1], safe='/'))" "$1" \
+        2>/dev/null || printf '%s' "$1" | sed 's/ /%20/g'
+}
 
-# --- KONFIGURATION BITTE ANPASSEN ---
-WATCH_DIR="/var/www/domain/downloads" # Pfad anpassen ordner der überwach werden soll
-BASE_URL="https://www.domain.de/downloads" # Pfad anpassen für die Benachrichtigungen
-APP_TOKEN="#############################"
-USER_KEY="##############################"
+notify() {
+    local http_code
+    http_code=$(curl -s -o /dev/null -w "%{http_code}" \
+        --form-string "token=${PUSHOVER_TOKEN}" \
+        --form-string "user=${PUSHOVER_USER}" \
+        --form-string "title=${1}" \
+        --form-string "message=${2}" \
+        --form-string "url=${3}" \
+        --form-string "url_title=${4}" \
+        --form-string "html=1" \
+        --form-string "priority=0" \
+        "https://api.pushover.net/1/messages.json")
+    [[ "$http_code" == "200" ]] &&
+        log "✔ Pushover gesendet → ${3}" ||
+        log "✘ Pushover fehlgeschlagen (HTTP ${http_code})" >&2
+}
 
-echo "Überwachung gestartet (gefiltert) auf $WATCH_DIR"
+handle_folder() {
+    local top_level="$1"
+    local top_path="${WATCH_DIR}/${top_level}"
+    local lockdir="${LOCK_DIR}/$(printf '%s' "$top_level" | sed 's/[^a-zA-Z0-9._-]/_/g').lock"
 
-inotifywait -m -r -e close_write -e moved_to --format '%w%f' "$WATCH_DIR" | while read FULL_PATH
-do
-    # Den Pfad für die URL säubern
-    RELATIVE_PATH=${FULL_PATH#$WATCH_DIR/}
-    FILENAME=$(basename "$FULL_PATH")
+    # Atomarer Lock — schlägt fehl wenn ein anderer Prozess ihn bereits hält
+    mkdir "$lockdir" 2>/dev/null || return
 
-    # --- FILTER-BEREICH ---
+    # Warten bis Upload fertig
+    sleep $COOLDOWN
 
-    # 1. Ignoriere alles, was "metadata" im Pfad hat
-    if [[ "$FULL_PATH" == *"metadata"* ]]; then
-        continue
+    mapfile -t FILES < <(find "$top_path" -type f 2>/dev/null | sort)
+    local count=${#FILES[@]}
+
+    local first_url="${BASE_URL}/" url_title="Downloads"
+    if [[ $count -gt 0 ]]; then
+        local first_rel="${FILES[0]#"$WATCH_DIR"/}"
+        first_url="${BASE_URL}/$(url_encode "$first_rel")"
+        url_title="Erste Datei herunterladen"
     fi
 
-    # 2. Ignoriere versteckte Dateien und Ordner (beginnen mit .)
-    # Dies filtert auch .DS_Store, .htaccess, .partial etc.
-    if [[ "$FILENAME" == .* ]] || [[ "$RELATIVE_PATH" == .* ]]; then
-        continue
-    fi
+    local lines=""
+    for ((i = 0; i < count && i < MAX_LIST; i++)); do
+        local fname frel furl
+        fname=$(basename "${FILES[$i]}")
+        frel="${FILES[$i]#"$WATCH_DIR"/}"
+        furl="${BASE_URL}/$(url_encode "$frel")"
+        lines+="<a href='${furl}'>📄 ${fname}</a>"$'\n'
+    done
+    ((count > MAX_LIST)) && lines+="<i>… und $((count - MAX_LIST)) weitere</i>"
 
-    # 3. Ignoriere typische temporäre Endungen
-    if [[ "$FILENAME" =~ \.(partial|tmp|crdownload|swp)$ ]]; then
-        continue
-    fi
+    local msg="<b>📁 Ordner:</b> ${top_level}/ <i>(${count} Datei(en))</i>"$'\n'"${lines}"
+    log "📁 Neuer Ordner: ${top_level}/ (${count} Dateien)"
+    notify "$PUSHOVER_TITLE" "$msg" "$first_url" "$url_title"
 
-    # --- VERARBEITUNG ---
+    rm -rf "$lockdir"
+}
 
-    if [ -d "$FULL_PATH" ]; then
-        MSG_TYPE="Ordner"
-        FILE_URL="${BASE_URL}/${RELATIVE_PATH}/"
+handle_file() {
+    local relative_path="$1"
+    local lockdir="${LOCK_DIR}/$(printf '%s' "$relative_path" | sed 's/[^a-zA-Z0-9._-]/_/g').lock"
+
+    mkdir "$lockdir" 2>/dev/null || return
+
+    local url="${BASE_URL}/$(url_encode "$relative_path")"
+    local msg="<b>📄 Datei:</b> ${relative_path}"
+    log "📄 Neue Datei: ${relative_path}"
+    notify "$PUSHOVER_TITLE" "$msg" "$url" "Herunterladen"
+
+    rm -rf "$lockdir"
+}
+
+# ── Prüfungen ─────────────────────────────────────────────────────────────────
+if ! command -v inotifywait &>/dev/null; then
+    log "FEHLER: inotifywait nicht gefunden → apt install inotify-tools"
+    exit 1
+fi
+if [[ ! -d "$WATCH_DIR" ]]; then
+    log "FEHLER: Verzeichnis nicht gefunden: $WATCH_DIR"
+    exit 1
+fi
+
+mkdir -p "$LOCK_DIR"
+log "Überwachung gestartet auf: $WATCH_DIR"
+
+while IFS='|' read -r EVENT DIR FILE; do
+
+    FULL_PATH="${DIR}${FILE}"
+    RELATIVE_PATH="${FULL_PATH#"$WATCH_DIR"/}"
+
+    # ── Filter ────────────────────────────────────────────────────────────────
+    [[ "$FILE" == .* || "$RELATIVE_PATH" == .* ]] && continue
+    [[ "$FILE" =~ \.(partial|tmp|crdownload|swp|lock|~)$ ]] && continue
+    [[ "$FULL_PATH" == *"metadata"* ]] && continue
+
+    TOP_LEVEL="${RELATIVE_PATH%%/*}"
+    TOP_PATH="${WATCH_DIR}/${TOP_LEVEL}"
+
+    if [[ -d "$TOP_PATH" ]]; then
+        # Im Hintergrund verarbeiten — Hauptschleife blockiert nicht
+        handle_folder "$TOP_LEVEL" &
     else
-        MSG_TYPE="Datei"
-        FILE_URL="${BASE_URL}/${RELATIVE_PATH}"
+        handle_file "$RELATIVE_PATH" &
     fi
 
-    echo "Sende Benachrichtigung für: $RELATIVE_PATH"
-
-    curl -s \
-      --form-string "token=$APP_TOKEN" \
-      --form-string "user=$USER_KEY" \
-      --form-string "html=1" \
-      --form-string "title=Neuer Upload" \
-      --form-string "message=<b>$MSG_TYPE:</b> $RELATIVE_PATH<br><br><b>Link:</b> <a href='$FILE_URL'>$FILE_URL</a>" \
-      --form-string "url=$FILE_URL" \
-      --form-string "url_title=Öffnen" \
-      https://api.pushover.net/1/messages.json > /dev/null
-done
+done < <(inotifywait -m -r \
+    -e close_write \
+    -e moved_to \
+    --format '%e|%w|%f' \
+    "$WATCH_DIR" 2>/dev/null)

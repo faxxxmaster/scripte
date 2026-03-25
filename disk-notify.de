@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+#crontab
+
+PUSHOVER_TOKEN="++++++++++++++++++++++++++"
+PUSHOVER_USER="+++++++++++++++++++++++++++"
+THRESHOLD=85
+
+USAGE=$(df / | awk 'NR==2 {print $5}' | tr -d '%')
+
+if [[ $USAGE -ge $THRESHOLD ]]; then
+        HOSTNAME=$(hostname)
+        DATE=$(date '+%d.%m.%Y %H:%M:%S')
+
+        curl -s \
+                --form-string "token=$PUSHOVER_TOKEN" \
+                --form-string "user=$PUSHOVER_USER" \
+                --form-string "title=⚠️ Festplatte voll: $HOSTNAME" \
+                --form-string "message=💾 Auslastung: ${USAGE}%
+📅 Zeit: $DATE
+🖥️ Partition: /" \
+                --form-string "priority=1" \
+                https://api.pushover.net/1/messages.json >/dev/null
+fi
