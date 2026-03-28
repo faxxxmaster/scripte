@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # =============================================================================
-# caddy-update.sh — Caddy neu bauen mit CrowdSec-Bouncer-Modul
+# faxxxmaster 03/2026
+# caddy-update.sh — Caddy neu bauen mit zB: CrowdSec-Bouncer-Modul
+# unter XCADDY_Modules kann man nooch mehr eintragen!
 # crontab!
 # =============================================================================
 set -euo pipefail
@@ -16,11 +18,18 @@ LOG_FILE="/var/log/caddy-update.log"
 # -----------------------------------------------------------------------------
 
 # Farben für Ausgabe
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
-info()    { echo -e "${BLUE}[INFO]${NC}  $*" | tee -a "$LOG_FILE"; }
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+info() { echo -e "${BLUE}[INFO]${NC}  $*" | tee -a "$LOG_FILE"; }
 success() { echo -e "${GREEN}[OK]${NC}    $*" | tee -a "$LOG_FILE"; }
-warn()    { echo -e "${YELLOW}[WARN]${NC}  $*" | tee -a "$LOG_FILE"; }
-error()   { echo -e "${RED}[ERROR]${NC} $*" | tee -a "$LOG_FILE"; exit 1; }
+warn() { echo -e "${YELLOW}[WARN]${NC}  $*" | tee -a "$LOG_FILE"; }
+error() {
+    echo -e "${RED}[ERROR]${NC} $*" | tee -a "$LOG_FILE"
+    exit 1
+}
 
 echo "" | tee -a "$LOG_FILE"
 echo "=============================================" | tee -a "$LOG_FILE"
@@ -35,10 +44,10 @@ if ! command -v xcaddy &>/dev/null; then
     warn "xcaddy nicht gefunden — wird installiert..."
     if ! command -v go &>/dev/null; then
         info "Go installieren..."
-        apt-get install -y golang >> "$LOG_FILE" 2>&1
+        apt-get install -y golang >>"$LOG_FILE" 2>&1
     fi
     # xcaddy für root installieren
-    GOPATH=/usr/local go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest >> "$LOG_FILE" 2>&1
+    GOPATH=/usr/local go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest >>"$LOG_FILE" 2>&1
     export PATH=$PATH:/usr/local/bin
     ln -sf /usr/local/bin/xcaddy /usr/local/bin/xcaddy 2>/dev/null || true
 fi
@@ -57,7 +66,7 @@ for mod in "${XCADDY_MODULES[@]}"; do
     WITH_ARGS+=(--with "$mod")
 done
 
-xcaddy build "${WITH_ARGS[@]}" >> "$LOG_FILE" 2>&1
+xcaddy build "${WITH_ARGS[@]}" >>"$LOG_FILE" 2>&1
 success "Build erfolgreich"
 
 # --- Neue Version prüfen -----------------------------------------------------
@@ -71,7 +80,7 @@ cp "$CADDY_BIN" "$BACKUP"
 
 # --- Service stoppen, Binary tauschen ----------------------------------------
 info "Stoppe $CADDY_SERVICE ..."
-systemctl stop "$CADDY_SERVICE" >> "$LOG_FILE" 2>&1
+systemctl stop "$CADDY_SERVICE" >>"$LOG_FILE" 2>&1
 
 info "Installiere neue Binary..."
 mv "$BUILD_DIR/caddy" "$CADDY_BIN"
@@ -81,7 +90,7 @@ success "Binary installiert"
 
 # --- Konfiguration validieren ------------------------------------------------
 info "Validiere Caddyfile..."
-if ! caddy validate --config /etc/caddy/Caddyfile >> "$LOG_FILE" 2>&1; then
+if ! caddy validate --config /etc/caddy/Caddyfile >>"$LOG_FILE" 2>&1; then
     warn "Konfiguration fehlerhaft — Rollback auf Backup..."
     cp "$BACKUP" "$CADDY_BIN"
     chmod +x "$CADDY_BIN"
@@ -92,7 +101,7 @@ fi
 
 # --- Service starten ---------------------------------------------------------
 info "Starte $CADDY_SERVICE ..."
-systemctl start "$CADDY_SERVICE" >> "$LOG_FILE" 2>&1
+systemctl start "$CADDY_SERVICE" >>"$LOG_FILE" 2>&1
 sleep 2
 
 if systemctl is-active --quiet "$CADDY_SERVICE"; then
@@ -110,7 +119,7 @@ fi
 rm -rf "$BUILD_DIR"
 success "Temporäre Dateien entfernt"
 info "Go Modulcache leeren..."
-cd /root && /usr/bin/go clean -modcache >> "$LOG_FILE" 2>&1 || warn "go clean fehlgeschlagen"
+cd /root && /usr/bin/go clean -modcache >>"$LOG_FILE" 2>&1 || warn "go clean fehlgeschlagen"
 success "Go Modulcache geleert"
 
 # --- CrowdSec Bouncer Status -------------------------------------------------

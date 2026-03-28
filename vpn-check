@@ -1,0 +1,24 @@
+#!/bin/bash
+# /usr/local/bin/vpn-check
+
+PUSHOVER_TOKEN="+++++++++++++++++++++++++++++"
+PUSHOVER_USER="++++++++++++++++++++++++++++++"
+
+HOSTS=(
+    "100.87.245.203:acer"
+)
+
+for entry in "${HOSTS[@]}"; do
+    IP="${entry%%:*}"
+    NAME="${entry##*:}"
+
+    if ! ping -c 2 -W 3 "$IP" &>/dev/null; then
+        curl -s \
+            --form-string "token=$PUSHOVER_TOKEN" \
+            --form-string "user=$PUSHOVER_USER" \
+            --form-string "title=VPN: $NAME nicht erreichbar" \
+            --form-string "message=$NAME ($IP) antwortet nicht." \
+            --form-string "priority=1" \
+            https://api.pushover.net/1/messages.json
+    fi
+done
