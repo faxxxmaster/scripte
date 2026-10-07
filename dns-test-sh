@@ -1,0 +1,31 @@
+#!/bin/bash
+
+echo "=== DNSSEC Test ==="
+echo "sigfail (muss SERVFAIL sein):"
+dig +dnssec sigfail.verteiltesysteme.net @127.0.0.53 | grep status
+
+echo
+echo "sigok (muss NOERROR + AD sein):"
+dig +dnssec sigok.verteiltesysteme.net @127.0.0.53 | grep -E "status|ad"
+
+echo
+echo "=== DNS-over-TLS Test ==="
+echo "Cloudflare Handshake:"
+openssl s_client -connect 1.1.1.1:853 -servername cloudflare-dns.com </dev/null 2>/dev/null | grep -E "Verify|Cipher"
+
+echo
+echo "Quad9 Handshake:"
+openssl s_client -connect 9.9.9.9:853 -servername dns.quad9.net </dev/null 2>/dev/null | grep -E "Verify|Cipher"
+
+echo
+echo "=== Leaking Test ==="
+echo "Aktiver DNS-Server:"
+resolvectl status | grep "Current DNS Server"
+
+echo
+echo "Externe DNS-IP laut TLS:"
+curl --silent https://1.1.1.1/cdn-cgi/trace | grep "dns"
+
+echo
+echo "dns Speedtest"
+hyperfine --warmup 2 'dig @9.9.9.9 google.de +short' 'dig @1.1.1.1 google.de +short'

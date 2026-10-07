@@ -1,0 +1,279 @@
+#!/bin/sh
+## 2026-07-13 SARBS testing
+# Abhängigkeiten: curl, mpv, rofi, awk, mktemp, dunstify (oder notify-send)
+# Spielt IPTV-Streams aus einer M3U-Playlist mit mpv ab.
+# Kanalauswahl erfolgt interaktiv über rofi.
+# Verwendung: iptv-mpv [-u|--update] [-r|--reset-status] [mpv-argumente...]
+#   -u, --update        Playlist zwangsweise aktualisieren
+#   -r, --reset-status  Kanal-Status zurücksetzen (tote Kanäle wieder anzeigen)
+
+# === VARIABLEN ============================================================
+# XDG State Verzeichnis für persistente Kanalliste
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}"
+# Persistente Datei für geparste Kanäle (name|url)
+CHANNELS_FILE="$STATE_DIR/iptv-channels"
+# Zeitstempel-Datei für die letzte Aktualisierung
+TIMESTAMP_FILE="$STATE_DIR/iptv-channels.timestamp"
+# Status-Datei: "name|status" (0=ungetestet, 1=ok, 2=tot)
+STATUS_FILE="$STATE_DIR/iptv-status"
+# Maximales Alter der Kanalliste in Sekunden (24 Stunden)
+MAX_AGE=86400
+# Temporäres Verzeichnis für einzelne Playlists
+TMPDIR=$(mktemp -d)
+
+# Playlist-Konfiguration: "Präfix|URL"
+PLAYLIST_CONFIG="DE|https://iptv-org.github.io/iptv/countries/de.m3u
+MUSIC|https://iptv-org.github.io/iptv/categories/music.m3u
+PL|https://iptv-org.github.io/iptv/countries/pl.m3u"
+
+# von https://github.com/iptv-org/iptv
+##  AL|https://iptv-org.github.io/iptv/index.m3u
+
+# von https://github.com/Romaxa55/world_ip_tv
+##  DE|https://iptv-org.github.io/iptv/countries/de.m3u
+##  AT|https://iptv-org.github.io/iptv/countries/at.m3u
+##  CH|https://iptv-org.github.io/iptv/countries/ch.m3u
+##  US|https://iptv-org.github.io/iptv/countries/us.m3u
+##  JM|https://iptv-org.github.io/iptv/countries/jm.m3u
+##  JP|https://iptv-org.github.io/iptv/countries/jp.m3u
+##  BR|https://iptv-org.github.io/iptv/countries/br.m3u
+##  ES|https://iptv-org.github.io/iptv/countries/es.m3u
+
+
+# === GLOBALE ROFI-KONFIGURATION ===========================================
+# Zentrale Stelle für einfache Anpassungen des Rofi-Menüs
+rofi_menu() {
+    rofi -dmenu -i -location 0 -theme-str 'window { width: 50%; height: 80%; } listview { lines: 30; }' "$@"
+}
+
+# === FUNKTIONEN ============================================================
+
+# Benachrichtigung senden (dunstify mit notify-send Fallback)
+notify() {
+    title="$1"
+    message="$2"
+    if [ -x "$(command -v dunstify)" ]; then
+        dunstify "$title" "$message"
+    elif [ -x "$(command -v notify-send)" ]; then
+        notify-send "$title" "$message"
+    fi
+}
+
+# Fehlermeldung ausgeben und Benachrichtigung senden
+error_exit() {
+    message="$1"
+    echo "$message" >&2
+    notify "IPTV-Fehler" "$message"
+    exit 1
+}
+
+# Temporäre Dateien beim Beenden löschen
+cleanup() {
+    rm -rf "$TMPDIR"
+}
+trap cleanup EXIT INT TERM
+
+# Prüfen ob die Kanalliste aktualisiert werden muss
+needs_update() {
+    # Datei existiert nicht → Update nötig
+    [ ! -f "$CHANNELS_FILE" ] && return 0
+
+    # Zeitstempel-Datei existiert nicht → Update nötig
+    [ ! -f "$TIMESTAMP_FILE" ] && return 0
+
+    # Alter berechnen und prüfen
+    current_time=$(date +%s)
+    last_update=$(cat "$TIMESTAMP_FILE" 2>/dev/null || echo 0)
+    age=$((current_time - last_update))
+
+    [ "$age" -ge "$MAX_AGE" ]
+}
+
+# M3U-Playlists herunterladen (unterstützt mehrere URLs mit Präfix)
+fetch_playlist() {
+    echo "Playlist(s) werden heruntergeladen..." >&2
+    notify "IPTV" "Playlist wird aktualisiert..."
+
+    # Jede Playlist separat herunterladen
+    echo "$PLAYLIST_CONFIG" | while IFS='|' read -r prefix url; do
+        [ -z "$url" ] && continue
+        curl -fsSL "$url" -o "$TMPDIR/$prefix" 2>/dev/null || {
+            echo "Warnung: Playlist konnte nicht geladen werden: $url" >&2
+        }
+    done
+
+    # Prüfen ob mindestens eine Playlist geladen wurde
+    if [ -z "$(ls -A "$TMPDIR" 2>/dev/null)" ]; then
+        error_exit "Fehler: Keine Playlists konnten heruntergeladen werden."
+    fi
+}
+
+# M3U-Playlist parsen: Extrahiert Kanalname und URL als "[Präfix] name|url"-Paare
+# Speichert das Ergebnis in CHANNELS_FILE
+parse_playlist() {
+    : > "$CHANNELS_FILE"
+
+    # Durch alle heruntergeladenen Playlist-Dateien iterieren
+    for playlist_file in "$TMPDIR"/*; do
+        [ -f "$playlist_file" ] || continue
+        prefix=$(basename "$playlist_file")
+
+        awk -v prefix="$prefix" '
+            /^#EXTINF/ {
+                # Kanalname ist alles nach dem letzten Komma
+                name = $0
+                sub(/.*,/, "", name)
+                # Führende und nachfolgende Leerzeichen entfernen
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", name)
+                next
+            }
+            /^#/ { next }
+            /^$/ { next }
+            name != "" {
+                print "[" prefix "] " name "|" $0
+                name = ""
+            }
+        ' "$playlist_file" >> "$CHANNELS_FILE"
+    done
+
+    # Prüfen ob Kanäle gefunden wurden
+    if [ ! -s "$CHANNELS_FILE" ]; then
+        error_exit "Keine Kanäle in der Playlist gefunden."
+    fi
+
+    # Zeitstempel speichern
+    date +%s > "$TIMESTAMP_FILE"
+
+    channel_count=$(wc -l < "$CHANNELS_FILE")
+    echo "Kanalliste erstellt: $channel_count Kanäle" >&2
+    notify "IPTV-Update" "$channel_count Kanäle verfügbar"
+}
+
+# Kanal über rofi auswählen lassen
+# Filtert tote Kanäle (Status 2) aus der Liste
+select_channel() {
+    # Kanalnamen extrahieren und tote Kanäle filtern (ein einziger awk-Aufruf)
+    if [ -f "$STATUS_FILE" ] && [ -s "$STATUS_FILE" ]; then
+        channel_names=$(awk -F'|' '
+            NR == FNR { dead[$1] = ($2 == "2"); next }
+            !dead[$1] { print $1 }
+        ' "$STATUS_FILE" "$CHANNELS_FILE")
+    else
+        channel_names=$(cut -d'|' -f1 "$CHANNELS_FILE")
+    fi
+
+    # Keine Kanäle mehr übrig?
+    if [ -z "$channel_names" ]; then
+        notify "IPTV" "Keine verfügbaren Kanäle übrig. Playlist aktualisieren mit -u"
+        exit 1
+    fi
+
+    selected=$(echo "$channel_names" | rofi_menu -p "Kanal auswählen:")
+
+    # Leere Auswahl = Abbruch
+    [ -z "$selected" ] && exit 0
+
+    echo "$selected"
+}
+
+# URL zum ausgewählten Kanal finden
+get_stream_url() {
+    selected_name="$1"
+
+    # URL des gewählten Kanals suchen (erstes Vorkommen)
+    stream_url=$(awk -F'|' -v n="$selected_name" '$1 == n {print $2; exit}' "$CHANNELS_FILE")
+
+    if [ -z "$stream_url" ]; then
+        return 1
+    fi
+
+    echo "$stream_url"
+}
+
+# Kanal-Status aktualisieren (0=ungetestet, 1=ok, 2=tot)
+update_status() {
+    channel_name="$1"
+    status="$2"
+
+    # Alten Eintrag entfernen falls vorhanden (exakter Match mit awk)
+    if [ -f "$STATUS_FILE" ]; then
+        awk -F'|' -v name="$channel_name" '$1 != name' "$STATUS_FILE" > "$STATUS_FILE.tmp" 2>/dev/null || true
+        mv "$STATUS_FILE.tmp" "$STATUS_FILE"
+    fi
+
+    # Neuen Status anhängen
+    echo "${channel_name}|${status}" >> "$STATUS_FILE"
+}
+
+# mpv starten und Return-Code prüfen
+# Bei Erfolg: Status 1, bei Fehler: Status 2 und zurück zur Auswahl
+play_channel_loop() {
+    while true; do
+        selected_channel=$(select_channel)
+        [ -z "$selected_channel" ] && exit 0
+
+        stream_url=$(get_stream_url "$selected_channel") || {
+            notify "IPTV-Fehler" "Kanal nicht gefunden: $selected_channel"
+            continue
+        }
+
+        notify "IPTV" "Spiele: $selected_channel"
+
+        # mpv starten (ohne exec, damit wir den Return-Code prüfen können)
+        mpv --force-window=no $mpv_args "$stream_url"
+
+        # Return-Code prüfen: 0 = erfolgreich, != 0 = Fehler
+        if [ $? -eq 0 ]; then
+            # mpv normal beendet (User hat beendet)
+            update_status "$selected_channel" 1
+        else
+            # Stream fehlgeschlagen – Status 2 (tot) setzen
+            update_status "$selected_channel" 2
+            notify "IPTV" "Stream fehlgeschlagen. Wähle einen anderen Kanal."
+        fi
+    done
+}
+
+# === HAUPTPROGRAMM =========================================================
+
+# Argumente verarbeiten
+force_update=0
+reset_status=0
+mpv_args=""
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -u|--update)
+            force_update=1
+            shift
+            ;;
+        -r|--reset-status)
+            reset_status=1
+            shift
+            ;;
+        *)
+            # Unbekannte Argumente als mpv-Argumente speichern
+            mpv_args="$mpv_args $1"
+            shift
+            ;;
+    esac
+done
+
+# Status-Datei zurücksetzen falls gewünscht
+if [ "$reset_status" -eq 1 ]; then
+    rm -f "$STATUS_FILE"
+    notify "IPTV" "Status-Datei gelöscht"
+    echo "Status-Datei gelöscht." >&2
+fi
+
+# Update-Logik: Herunterladen wenn nötig oder erzwungen
+if [ "$force_update" -eq 1 ] || needs_update; then
+    fetch_playlist
+    parse_playlist
+else
+    # Bestehende Kanalliste verwenden
+    echo "Verwende zwischengespeicherte Kanalliste." >&2
+fi
+
+# Kanalauswahl-Schleife (bei Fehler zurück zur Auswahl)
+play_channel_loop

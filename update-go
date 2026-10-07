@@ -1,0 +1,36 @@
+
+#!/usr/bin/env bash
+set -euo pipefail
+
+case "$(dpkg --print-architecture)" in
+  amd64) ARCH=amd64 ;;
+  arm64) ARCH=arm64 ;;
+  armhf) ARCH=armv6l ;;
+  *) echo "Architektur nicht unterstützt" >&2; exit 1 ;;
+esac
+
+LATEST=$(curl -fsS 'https://go.dev/VERSION?m=text' | head -1)
+CURRENT=$(/usr/local/go/bin/go version 2>/dev/null | awk '{print $3}' || true)
+
+if [ "$LATEST" = "$CURRENT" ]; then
+  echo "Go $CURRENT ist aktuell."
+  exit 0
+fi
+
+echo "Update: ${CURRENT:-keine} -> $LATEST"
+FILE="${LATEST}.linux-${ARCH}.tar.gz"
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
+cd "$TMP"
+
+curl -fsSLO "https://go.dev/dl/${FILE}"
+
+#echo "$(curl -fsSL "https://go.dev/dl/${FILE}.sha256")  ${FILE}" | sha256sum -c -
+
+SHA=$(curl -fsS 'https://go.dev/dl/?mode=json' | jq -r --arg f "$FILE" '.[].files[] | select(.filename==$f) | .sha256')
+[ -n "$SHA" ] || { echo "Keine Checksumme für $FILE gefunden" >&2; exit 1; }
+echo "$SHA  $FILE" | sha256sum -c -
+
+sudo rm -rf /usr/local/go
+sudo tar -C /usr/local -xzf "$FILE"
+/usr/local/go/bin/go version

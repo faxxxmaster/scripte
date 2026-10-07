@@ -1,0 +1,12 @@
+#!/bin/bash
+
+#faxxxmaster 03/2006
+# /.local/bin/wartung
+
+if [ "$1" = "an" ]; then
+    caddy reload --config /etc/caddy/Caddyfile.wartung
+    echo "Wartungsmodus AN"
+elif [ "$1" = "aus" ]; then
+    caddy reload --config /etc/caddy/Caddyfile
+    echo "Wartungsmodus AUS"
+fi
