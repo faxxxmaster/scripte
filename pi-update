@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# pi-models.sh – ~/.pi/agent/models.json aus LM Studio + Unsloth erzeugen
+set -u
+
+LM_URL=http://192.168.23.100:1234/v1
+UNSLOTH_URL=http://192.168.23.100:8888/v1   # Host/Port anpassen
+: "${UNSLOTH_API_KEY:?UNSLOTH_API_KEY nicht gesetzt}"
+
+OUT=~/.pi/agent/models.json
+TMP=$(mktemp)
+
+LM=$(curl -sf --max-time 3 "$LM_URL/models" || echo '{"data":[]}')
+US=$(curl -sf --max-time 3 -H "Authorization: Bearer $UNSLOTH_API_KEY" "$UNSLOTH_URL/models" || echo '{"data":[]}')
+
+# Abbruch, wenn beide Server leer sind -> models.json bleibt unverändert
+N=$(jq -n --argjson a "$LM" --argjson b "$US" '($a.data|length)+($b.data|length)') || exit 1
+[ "$N" -gt 0 ] || { echo "kein Server erreichbar, models.json bleibt unverändert" >&2; exit 1; }
+
+jq -n --argjson lm "$LM" --argjson us "$US" \
+  --arg lurl "$LM_URL" --arg uurl "$UNSLOTH_URL" --arg ukey "$UNSLOTH_API_KEY" '{
+  providers: {
+    lmstudio: {
+      baseUrl: $lurl,
+      api: "openai-completions",
+      apiKey: "lm-studio",
+      models: [ $lm.data[] | select(.id | test("embed") | not) | {id: .id, name: .id, reasoning: true} ]
+    },
+    unsloth: {
+      baseUrl: $uurl,
+      api: "openai-completions",
+      apiKey: $ukey,
+      models: [ $us.data[] | select(.id | test("embed") | not) | {id: .id, name: .id, reasoning: true} ]
+    }
+  }
+}' > "$TMP" || { rm -f "$TMP"; exit 1; }
+
+[ -f "$OUT" ] && cp "$OUT" "$OUT.bak"
+mv "$TMP" "$OUT"
+chmod 600 "$OUT"
+echo "LM Studio: $(jq '.providers.lmstudio.models|length' "$OUT") Modelle, Unsloth: $(jq '.providers.unsloth.models|length' "$OUT") Modelle"
